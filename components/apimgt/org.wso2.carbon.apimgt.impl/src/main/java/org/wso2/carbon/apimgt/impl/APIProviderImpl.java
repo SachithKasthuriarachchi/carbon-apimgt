@@ -91,6 +91,8 @@ import org.wso2.carbon.apimgt.impl.certificatemgt.GatewayCertificateManager;
 import org.wso2.carbon.apimgt.impl.certificatemgt.ResponseCode;
 import org.wso2.carbon.apimgt.impl.clients.RegistryCacheInvalidationClient;
 import org.wso2.carbon.apimgt.impl.clients.TierCacheInvalidationClient;
+import org.wso2.carbon.apimgt.impl.containermgt.ContainerBasedConstants;
+import org.wso2.carbon.apimgt.impl.containermgt.ContainerManager;
 import org.wso2.carbon.apimgt.impl.dao.ApiMgtDAO;
 import org.wso2.carbon.apimgt.impl.definitions.OASParserUtil;
 import org.wso2.carbon.apimgt.impl.definitions.GraphQLSchemaDefinition;
@@ -7686,6 +7688,51 @@ class APIProviderImpl extends AbstractAPIManager implements APIProvider {
     @Override
     public String getGraphqlSchema(APIIdentifier apiId) throws APIManagementException {
         return getGraphqlSchemaDefinition(apiId);
+    }
+
+    @Override
+    public void publishInPrivateJet(API api, APIIdentifier apiIdentifier, List<String> clusterNames)
+            throws ParseException, UserStoreException, org.wso2.carbon.registry.api.RegistryException,
+            IllegalAccessException, InstantiationException, ClassNotFoundException, APIManagementException {
+
+        Map<String, Map<String, String>> allClusters = getAllClustersFromConfig();
+
+        if (clusterNames.size() != 0) {
+
+            log.info("Publishing the [API] " + apiIdentifier.getApiName() + " in Kubernetes");
+            for (String clusterName : clusterNames) {
+
+                Map<String, String> clusterInfo = allClusters.get(clusterName);
+                ContainerManager containerManager = getContainerManagerInstance();
+                containerManager.initManager(clusterInfo);
+                containerManager.changeLCStateCreatedToPublished(api, apiIdentifier);
+            }
+        }
+    }
+
+    private ContainerManager getContainerManagerInstance()
+            throws UserStoreException, RegistryException, ParseException, ClassNotFoundException,
+            IllegalAccessException, InstantiationException {
+
+        String content = getTenantConfigContent();
+        JSONParser jsonParser = new JSONParser();
+        JSONObject tenantConf = (JSONObject) jsonParser.parse(content);
+        String className = ((JSONObject) tenantConf.get(ContainerBasedConstants.CONTAINER_MANAGEMENT_INFO))
+                .get(ContainerBasedConstants.CLASS_NAME).toString();
+
+        Class<ContainerManager> CloudManager = (Class<ContainerManager>) Class.forName(className);
+
+        return CloudManager.newInstance();
+    }
+
+    private Map<String, Map<String, String>> getAllClustersFromConfig() throws UserStoreException, RegistryException,
+            ParseException {
+
+        String content = getTenantConfigContent();
+        JSONParser jsonParser = new JSONParser();
+        JSONObject tenantConf = (JSONObject) jsonParser.parse(content);
+
+        return APIUtil.getClusterInfoFromConfig(tenantConf);
     }
 
     /**
